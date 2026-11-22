@@ -367,11 +367,12 @@
   function toolsEl(n) {
     const tools = document.createElement('div');
     tools.className = 'tools';
-    const mk = (label, fn, cls) => {
+    const mk = (label, fn, cls, title) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.textContent = label;
       if (cls) b.className = cls;
+      if (title) b.title = title;
       b.addEventListener('click', (e) => { e.stopPropagation(); fn(); });
       return b;
     };
@@ -382,11 +383,17 @@
       );
       return tools;
     }
-    tools.append(
-      mk('복사', () => copyText(n.text)),
+    const acts = document.createElement('div');
+    acts.className = 'acts';
+    acts.append(
       mk(n.pinned ? '고정해제' : '📌 고정', () => togglePin(n.id)),
       mk('수정', () => startEdit(n.id)),
-      mk('삭제', () => deleteNote(n.id)),
+      mk('삭제', () => deleteNote(n.id), 'danger'),
+    );
+    tools.append(
+      mk('복사', () => copyText(n.text), null, '한 번에 복사'),
+      mk('⋯', () => tools.classList.toggle('open'), 'more', '고정·수정·삭제'),
+      acts,
     );
     return tools;
   }
@@ -425,7 +432,8 @@
     wrap.append(time, bubbleWrap);
     wrap.addEventListener('click', (e) => {
       if (e.target.closest('a,button,input,label,img')) return;
-      wrap.classList.toggle('showtools');
+      const t = wrap.querySelector('.tools');
+      if (t) t.classList.toggle('open');
     });
     return wrap;
   }

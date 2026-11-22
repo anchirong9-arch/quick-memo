@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest.webmanifest" />
 <link rel="icon" href="icons/icon-192.png" sizes="192x192" />
 <link rel="apple-touch-icon" href="icons/icon-180.png" />
-<link rel="stylesheet" href="styles.css?v=1" />
+<link rel="stylesheet" href="styles.css?v=2" />
 </head>
 <body>
 <div class="app" id="app">
@@ -61,7 +61,7 @@
     </div>
     <div class="inputrow">
       <button class="cbtn" id="btnPhoto" title="사진 첨부" aria-label="사진 첨부">🖼️</button>
-      <textarea id="input" rows="1" placeholder="메모 입력… (Enter 전송 / Shift+Enter 줄바꿈)" enterkeyhint="send" autocapitalize="sentences"></textarea>
+      <textarea id="input" rows="1" placeholder="메모 입력… (Enter 전송 / Shift+Enter 줄바꿈)" enterkeyhint="send" autocapitalize="sentences" spellcheck="false" autocorrect="off"></textarea>
       <button class="cbtn" id="btnTodo" title="할일 추가" aria-label="할일 추가">☑️</button>
       <button class="send" id="btnSend" title="전송" aria-label="전송">
         <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M4 11.5 20 4l-7.5 16-2.2-6.3L4 11.5Z" fill="currentColor"/></svg>
@@ -86,6 +86,6 @@
   <button class="sheetclose" id="sheetClose">닫기</button>
 </div>
 
-<script src="app.js?v=1"></script>
+<script src="app.js?v=2"></script>
 </body>
 </html>

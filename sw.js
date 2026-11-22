@@ -1,10 +1,10 @@
 /* 빠른 메모 — 오프라인 앱 셸 캐시 */
-const CACHE = 'quick-memo-v1';
+const CACHE = 'quick-memo-v2';
 const SHELL = [
   './',
   './index.html',
-  './styles.css?v=1',
-  './app.js?v=1',
+  './styles.css?v=2',
+  './app.js?v=2',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
