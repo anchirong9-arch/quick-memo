@@ -141,8 +141,9 @@ body::before {
 .list {
   flex: 1; overflow-y: auto; padding: 10px 12px calc(120px + var(--safe-b));
   display: flex; flex-direction: column; gap: 8px;
-  scroll-behavior: smooth;
+  scroll-behavior: smooth; scrollbar-width: none;
 }
+.list::-webkit-scrollbar { display: none; }
 .daysep {
   position: sticky; top: -1px; z-index: 5; align-self: center;
   margin: 10px 0 4px; padding: 3px 12px; border-radius: 999px;
