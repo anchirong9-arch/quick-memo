@@ -12,6 +12,18 @@
 </style>
 </head>
 <body>
-<div class="phone"><div class="screen"><div class="notch"></div><iframe src="./?pv=5" title="빠른 메모 미리보기"></iframe></div></div>
+<div class="phone"><div class="screen"><div class="notch"></div><iframe id="f" src="./?pv=5" title="빠른 메모 미리보기"></iframe></div></div>
+<script>
+  const f = document.getElementById('f');
+  f.addEventListener('load', () => {
+    setTimeout(() => {
+      try {
+        const d = f.contentDocument;
+        const l = d && d.querySelector('.list');
+        if (l) l.scrollTop = 0;
+      } catch (e) {}
+    }, 700);
+  });
+</script>
 </body>
 </html>
