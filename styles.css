@@ -145,7 +145,7 @@ body::before {
 }
 .list::-webkit-scrollbar { display: none; }
 .daysep {
-  position: sticky; top: -1px; z-index: 5; align-self: center;
+  position: relative; z-index: 2; align-self: center;
   margin: 10px 0 4px; padding: 3px 12px; border-radius: 999px;
   background: var(--panel-solid); border: 1px solid var(--line);
   font-size: 11.5px; font-weight: 700; color: var(--muted); letter-spacing: .2px;
