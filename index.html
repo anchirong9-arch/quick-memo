@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest.webmanifest" />
 <link rel="icon" href="icons/icon-192.png" sizes="192x192" />
 <link rel="apple-touch-icon" href="icons/icon-180.png" />
-<link rel="stylesheet" href="styles.css?v=4" />
+<link rel="stylesheet" href="styles.css?v=5" />
 </head>
 <body>
 <div class="app" id="app">
@@ -33,7 +33,7 @@
 
     <div class="searchbox">
       <span class="sicon" aria-hidden="true">🔍</span>
-      <input id="q" type="search" placeholder="검색 — 띄어쓰기로 여러 단어" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="search" />
+      <input id="q" type="text" inputmode="search" placeholder="검색 — 띄어쓰기로 여러 단어" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="search" />
       <span class="qcount" id="qcount"></span>
       <button class="qclear" id="qclear" aria-label="검색 지우기" hidden>✕</button>
     </div>
@@ -86,6 +86,6 @@
   <button class="sheetclose" id="sheetClose">닫기</button>
 </div>
 
-<script src="app.js?v=4"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>
