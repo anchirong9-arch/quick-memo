@@ -163,6 +163,26 @@
   const URL_RE = /https?:\/\/[^\s<>"'`]+|www\.[^\s<>"'`]+/gi;
   const TAG_RE = /#[0-9A-Za-z가-힣_]{1,30}/g;
   const TODO_RE = /^\s*(?:[-*]\s*)?\[( |x|X)\]\s?(.*)$/;
+  const BULLET_RE = /^\s*(?:[-*•]|\d+[.)])\s+/;
+
+  // 여러 줄 글을 '줄마다 네모'가 붙는 할일 목록으로 바꾼다.
+  // 이미 할일인 줄은 체크 상태 그대로 두고, 빈 줄은 목록에서 뺀다.
+  function toTodoText(text) {
+    const out = [];
+    String(text).replace(/\s+$/, '').split('\n').forEach((raw) => {
+      const line = raw.replace(/\s+$/, '');
+      if (!line.trim()) return;
+      if (TODO_RE.test(line)) {
+        const tm = line.match(TODO_RE);
+        if (!tm[2].trim()) return; // 글자 없는 빈 네모는 버린다
+        out.push(line.replace(/^\s+/, ''));
+        return;
+      }
+      const body = line.replace(BULLET_RE, '').trim();
+      out.push('- [ ] ' + (body || line.trim()));
+    });
+    return out.join('\n');
+  }
 
   function tagsOf(text) {
     const out = [];
@@ -174,7 +194,7 @@
   }
   function urlsOf(text) { return text.match(URL_RE) || []; }
   function hasOpenTodo(text) {
-    return text.split('\n').some((l) => { const m = l.match(TODO_RE); return m && m[1] === ' '; });
+    return text.split('\n').some((l) => { const m = l.match(TODO_RE); return m && m[1] === ' ' && m[2].trim(); });
   }
   function normalizeUrl(u) { return /^www\./i.test(u) ? 'https://' + u : u; }
   function hostOf(u) {
@@ -308,6 +328,8 @@
     lines.forEach((line, lineIdx) => {
       const tm = line.match(TODO_RE);
       if (tm) {
+        // 글자 없는 빈 네모는 그리지 않는다 (예전에 밑에 덩그러니 남던 빈 체크박스)
+        if (!tm[2].trim()) return;
         flush();
         const row = document.createElement('label');
         row.className = 'todo' + (tm[1] === ' ' ? '' : ' done');
@@ -400,6 +422,7 @@
     acts.className = 'acts';
     acts.append(
       mk(n.pinned ? '고정해제' : '📌 고정', () => togglePin(n.id)),
+      mk('☑️ 할일', () => convertNoteToTodo(n.id), null, '줄마다 체크박스로 바꾸기'),
       mk('수정', () => startEdit(n.id)),
       mk('삭제', () => deleteNote(n.id), 'danger'),
     );
@@ -695,7 +718,12 @@
     if (picks.length < 2) { showToast('두 개 이상 골라 주세요'); return; }
 
     const delOrig = $('#mergeDelOrig').checked;
-    const text = picks.map((n) => n.text.replace(/\s+$/, '')).filter((t) => t.length).join('\n\n');
+    // 전부 할일 메모면 빈 줄 없이 촘촘하게 이어 붙여 하나의 체크리스트로 만든다
+    const allTodo = picks.every((n) => {
+      const lines = n.text.split('\n').filter((l) => l.trim());
+      return lines.length > 0 && lines.every((l) => TODO_RE.test(l));
+    });
+    const text = picks.map((n) => n.text.replace(/\s+$/, '')).filter((t) => t.length).join(allTodo ? '\n' : '\n\n');
     const imgs = [];
     picks.forEach((n) => imagesOf(n).forEach((im) => imgs.push({ id: im.id, w: im.w, h: im.h })));
 
@@ -769,6 +797,27 @@
     activeTag = '';
     render();
     requestAnimationFrame(() => { listEl.scrollTop = listEl.scrollHeight; });
+  }
+
+  // 메모 한 장을 줄마다 체크박스가 붙는 할일 목록으로 바꾼다 (합친 메모도 한 번에)
+  function convertNoteToTodo(id) {
+    const n = notes.find((x) => x.id === id);
+    if (!n) return;
+    const before = n.text;
+    const next = toTodoText(before);
+    if (!next) { showToast('바꿀 내용이 없어요'); return; }
+    if (next === before) { showToast('이미 줄마다 할일이에요'); return; }
+    n.text = next;
+    n.edited = true;
+    persist();
+    render();
+    const count = next.split('\n').length;
+    showToast(`할일 ${count}개로 바꿨어요`, '실행취소', () => {
+      n.text = before;
+      persist();
+      render();
+      showToast('할일로 바꾸기를 되돌렸어요');
+    }, 9000);
   }
 
   function toggleTodo(id, lineIdx, checked) {
@@ -1137,10 +1186,25 @@
     if (img) { pendingImage = img; showAttach(img.data); inputEl.focus(); }
   });
   $('#attachRemove').addEventListener('click', hideAttach);
+  // ☑️ — 입력 중인 글을 '줄마다 네모' 할일로 바꾼다 (빈 칸이면 새 항목 시작)
   $('#btnTodo').addEventListener('click', () => {
     const v = inputEl.value;
-    if (v && !v.endsWith('\n')) inputEl.value = v + '\n- [ ] ';
-    else inputEl.value = v + '- [ ] ';
+    if (!v.trim()) {
+      inputEl.value = '- [ ] ';
+    } else {
+      const before = v.replace(/\s+$/, '');
+      const next = toTodoText(v) || v;
+      inputEl.value = next;
+      if (next !== before) {
+        const count = next.split('\n').length;
+        showToast(`${count}줄을 할일로 바꿨어요 — Enter로 저장`, '되돌리기', () => {
+          inputEl.value = before;
+          autosize();
+          inputEl.focus();
+          inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
+        }, 6000);
+      }
+    }
     autosize();
     inputEl.focus();
     inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);

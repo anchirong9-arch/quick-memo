@@ -242,8 +242,9 @@ html[data-theme="light"] .linkcard { background: #f2f4fb; border-color: #e0e4f2;
 .todo {
   display: flex; align-items: flex-start; gap: 8px; padding: 2px 0;
 }
+.todo + .todo { margin-top: 1px; }
 .todo input {
-  appearance: none; -webkit-appearance: none; flex: none;
+  appearance: none; -webkit-appearance: none; flex: 0 0 auto;
   width: 19px; height: 19px; margin: 2px 0 0; border-radius: 6px;
   border: 1.6px solid var(--muted2); background: transparent; position: relative;
   cursor: pointer; transition: all .14s;
@@ -254,7 +255,7 @@ html[data-theme="light"] .linkcard { background: #f2f4fb; border-color: #e0e4f2;
   border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(42deg);
 }
 .todo.done .tlabel { color: var(--muted2); text-decoration: line-through; }
-.tlabel { flex: 1; min-width: 0; white-space: pre-wrap; }
+.tlabel { flex: 1 1 auto; min-width: 0; white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
 
 /* 메시지 도구 */
 .tools { display: flex; gap: 3px; justify-content: flex-end; flex-wrap: wrap; }
