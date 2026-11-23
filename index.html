@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest.webmanifest" />
 <link rel="icon" href="icons/icon-192.png" sizes="192x192" />
 <link rel="apple-touch-icon" href="icons/icon-180.png" />
-<link rel="stylesheet" href="styles.css?v=6" />
+<link rel="stylesheet" href="styles.css?v=7" />
 </head>
 <body>
 <div class="app" id="app">
@@ -26,6 +26,7 @@
         <span class="badge" id="totalBadge">0</span>
       </div>
       <div class="topbtns">
+        <button class="iconbtn mergebtn" id="btnMerge" title="메모 합치기" aria-label="메모 합치기"><span class="mi">⇅</span><span class="mlabel">합치기</span></button>
         <button class="iconbtn" id="btnTheme" title="테마 전환" aria-label="테마 전환">🌙</button>
         <button class="iconbtn" id="btnMenu" title="더보기" aria-label="더보기">⋯</button>
       </div>
@@ -55,6 +56,13 @@
       <span>✏️ 수정 중</span>
       <button id="editCancel">취소</button>
     </div>
+    <div class="mergebar" id="mergebar" hidden>
+      <div class="mrow1">
+        <b id="mergeCount">0개 선택</b>
+        <label class="mtoggle"><input type="checkbox" id="mergeDelOrig" checked /><span>원본 삭제</span></label>
+      </div>
+      <button class="mergego" id="mergeGo" disabled>선택한 0개 합치기</button>
+    </div>
     <div class="attach" id="attach" hidden>
       <img id="attachImg" alt="첨부 미리보기" />
       <button id="attachRemove" aria-label="첨부 취소">✕</button>
@@ -62,11 +70,13 @@
     <div class="inputrow">
       <button class="cbtn" id="btnPhoto" title="사진 첨부" aria-label="사진 첨부">🖼️</button>
       <textarea id="input" rows="1" placeholder="메모 입력…" enterkeyhint="send" autocapitalize="sentences" spellcheck="false" autocorrect="off"></textarea>
+      <button class="cbtn nl" id="btnNewline" title="줄바꿈 (Shift+Enter)" aria-label="줄바꿈">↵</button>
       <button class="cbtn" id="btnTodo" title="할일 추가" aria-label="할일 추가">☑️</button>
       <button class="send" id="btnSend" title="전송" aria-label="전송">
         <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M4 11.5 20 4l-7.5 16-2.2-6.3L4 11.5Z" fill="currentColor"/></svg>
       </button>
     </div>
+    <div class="inputhint" id="inputhint">Enter 전송 · <b>Shift+Enter</b> 줄바꿈 · <b>↵</b> 버튼으로도 줄바꿈</div>
     <input type="file" id="fileInput" accept="image/*" hidden />
     <input type="file" id="importInput" accept="application/json,.json" hidden />
   </footer>
@@ -86,6 +96,6 @@
   <button class="sheetclose" id="sheetClose">닫기</button>
 </div>
 
-<script src="app.js?v=6"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>

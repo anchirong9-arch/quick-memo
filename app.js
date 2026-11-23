@@ -90,7 +90,7 @@
     async allImages() {
       if (fallback) {
         const out = {};
-        notes.forEach((n) => { if (n.img && n.img.data) out[n.img.id] = n.img.data; });
+        notes.forEach((n) => { imagesOf(n).forEach((im) => { if (im.data) out[im.id] = im.data; }); });
         return out;
       }
       try {
@@ -120,6 +120,8 @@
   let editId = null;
   let pendingImage = null; // {data,w,h}
   let undoStack = null;
+  let selectMode = false;
+  const selected = new Set();
 
   const listEl = $('#list');
   const inputEl = $('#input');
@@ -130,6 +132,9 @@
   /* ---------------- 유틸 ---------------- */
   const uid = () => 'n' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   const esc = (s) => String(s);
+  // 메모의 첨부 사진 목록 (여러 장 합치기 지원 — 예전 단일 img 형식도 읽음)
+  const imagesOf = (n) => (Array.isArray(n.imgs) && n.imgs.length ? n.imgs : (n.img ? [n.img] : []));
+  const imageIds = (n) => imagesOf(n).map((im) => im.id).filter(Boolean);
 
   function fmtTime(t) {
     const d = new Date(t);
@@ -213,7 +218,7 @@
     if (n.deleted) return false;
     if (filter === 'pin') return !!n.pinned;
     if (filter === 'link') return urlsOf(n.text).length > 0;
-    if (filter === 'img') return !!n.img;
+    if (filter === 'img') return imagesOf(n).length > 0;
     if (filter === 'todo') return hasOpenTodo(n.text);
     return true;
   }
@@ -291,8 +296,15 @@
     const body = document.createElement('div');
     body.className = 'txt';
     const lines = n.text.split('\n');
-    let p = null;
-    const flush = () => { if (p) { body.appendChild(p); p = null; } };
+    let buf = [];
+    // 줄바꿈을 입력한 그대로 (빈 줄 포함) 보여 주기 위해 한 덩어리는 pre-wrap 으로 렌더
+    const flush = () => {
+      if (!buf.length) return;
+      const p = document.createElement('p');
+      p.appendChild(inlineNodes(buf.join('\n')));
+      body.appendChild(p);
+      buf = [];
+    };
     lines.forEach((line, lineIdx) => {
       const tm = line.match(TODO_RE);
       if (tm) {
@@ -311,10 +323,7 @@
         body.appendChild(row);
         return;
       }
-      if (!line.trim()) { flush(); return; }
-      if (!p) p = document.createElement('p');
-      else p.appendChild(document.createElement('br'));
-      p.appendChild(inlineNodes(line));
+      buf.push(line);
     });
     flush();
     if (!body.childNodes.length) body.appendChild(document.createElement('p'));
@@ -322,18 +331,18 @@
     return body;
   }
 
-  function thumbEl(n) {
+  function thumbEl(im) {
     const wrap = document.createElement('div');
     wrap.className = 'thumb';
     const img = document.createElement('img');
     img.alt = '첨부 사진';
     img.loading = 'lazy';
-    const cached = imageCache.get(n.img.id) || n.img.data;
+    const cached = imageCache.get(im.id) || im.data;
     if (cached) img.src = cached;
     else {
       img.style.minHeight = '110px';
       img.style.background = 'var(--line)';
-      Store.getImage(n.img.id).then((d) => { if (d) img.src = d; });
+      Store.getImage(im.id).then((d) => { if (d) img.src = d; });
     }
     img.addEventListener('click', (e) => { e.stopPropagation(); openLightbox(img.src); });
     wrap.appendChild(img);
@@ -403,6 +412,18 @@
     wrap.className = 'msg';
     wrap.dataset.id = n.id;
 
+    if (selectMode) {
+      wrap.classList.add('selmode');
+      if (selected.has(n.id)) wrap.classList.add('selected');
+      const box = document.createElement('button');
+      box.type = 'button';
+      box.className = 'selbox';
+      box.textContent = selected.has(n.id) ? '✓' : '';
+      box.setAttribute('aria-label', '이 메모 선택');
+      box.addEventListener('click', (e) => { e.stopPropagation(); toggleSelect(n.id); });
+      wrap.appendChild(box);
+    }
+
     const bubbleWrap = document.createElement('div');
     bubbleWrap.className = 'bubblewrap';
 
@@ -411,9 +432,15 @@
     bubble.appendChild(bodyEl(n, ts));
     const urls = urlsOf(n.text);
     if (urls.length) bubble.appendChild(linkCardEl(urls[0]));
-    if (n.img) bubble.appendChild(thumbEl(n));
+    const imgs = imagesOf(n);
+    if (imgs.length) {
+      const gal = document.createElement('div');
+      gal.className = 'imgrid' + (imgs.length > 1 ? ' multi' : '');
+      imgs.forEach((im) => gal.appendChild(thumbEl(im)));
+      bubble.appendChild(gal);
+    }
     bubbleWrap.appendChild(bubble);
-    bubbleWrap.appendChild(toolsEl(n));
+    if (!selectMode) bubbleWrap.appendChild(toolsEl(n));
 
     const time = document.createElement('div');
     time.className = 'time';
@@ -424,6 +451,7 @@
     flags.className = 'flags';
     const fl = [];
     if (n.pinned && !trashView) fl.push('📌');
+    if (n.merged) fl.push('🧩');
     if (n.edited) fl.push('수정됨');
     if (trashView) fl.push('🗑');
     flags.textContent = fl.join(' ');
@@ -432,6 +460,7 @@
     wrap.append(time, bubbleWrap);
     wrap.addEventListener('click', (e) => {
       if (e.target.closest('a,button,input,label,img')) return;
+      if (selectMode) { toggleSelect(n.id); return; }
       const t = wrap.querySelector('.tools');
       if (t) t.classList.toggle('open');
     });
@@ -444,7 +473,7 @@
       { id: 'all', label: '전체', n: live.length },
       { id: 'pin', label: '📌 고정', n: live.filter((x) => x.pinned).length },
       { id: 'link', label: '🔗 링크', n: live.filter((x) => urlsOf(x.text).length).length },
-      { id: 'img', label: '🖼️ 사진', n: live.filter((x) => !!x.img).length },
+      { id: 'img', label: '🖼️ 사진', n: live.filter((x) => imagesOf(x).length).length },
       { id: 'todo', label: '☑️ 할일', n: live.filter((x) => hasOpenTodo(x.text)).length },
     ];
   }
@@ -490,14 +519,18 @@
   }
 
   function render() {
+    if (trashView && selectMode) { selectMode = false; selected.clear(); }
     const ts = terms();
     const scroller = listEl;
     const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 60;
+    const keepTop = scroller.scrollTop;
 
     listEl.innerHTML = '';
     renderChips();
     $('#totalBadge').textContent = notes.filter((n) => !n.deleted).length;
+    $('#btnMerge').hidden = trashView;
     composerVisible(!trashView);
+    updateMergeBar();
 
     const shown = notes.filter(pass);
 
@@ -510,6 +543,7 @@
           '<small>아래 입력창에 톡 치고 Enter — 날짜·시간이 찍혀서 쌓입니다.</small>' +
           '<div class="tips"><span>#태그 로 묶고, 태그를 눌러 바로 필터</span>' +
           '<span>- [ ] 장보기 처럼 쓰면 체크리스트</span>' +
+          '<span>↵ 버튼으로 줄바꿈, 상단 ⇅ 로 메모 합치기</span>' +
           '<span>링크는 자동으로 카드가 되고, 🖼️ 로 사진 첨부</span></div>';
       } else if (trashView) {
         empty.innerHTML = '<div class="big">🗑️</div><b>휴지통이 비어 있어요</b>';
@@ -563,6 +597,7 @@
     updateQcount(shown.length, notes.filter((n) => !n.deleted).length);
 
     if (atBottom || shown.length === 1) requestAnimationFrame(() => { scroller.scrollTop = scroller.scrollHeight; });
+    else requestAnimationFrame(() => { scroller.scrollTop = keepTop; });
   }
 
   function escapeHtml(s) {
@@ -589,6 +624,117 @@
     listEl.scrollTop = 0;
   }
 
+  /* ---------------- 선택 모드 · 메모 합치기 ---------------- */
+  function updateMergeBar() {
+    const bar = $('#mergebar');
+    const btn = $('#btnMerge');
+    if (!bar || !btn) return;
+    bar.hidden = !selectMode;
+    const n = selected.size;
+    $('#mergeCount').textContent = n ? `${n}개 선택` : '0개 선택';
+    const go = $('#mergeGo');
+    go.disabled = n < 2;
+    go.textContent = n ? `선택한 ${n}개 합치기` : '선택한 0개 합치기';
+    btn.classList.toggle('on', selectMode);
+    const label = selectMode ? '취소' : '합치기';
+    btn.innerHTML = `<span class="mi">${selectMode ? '✕' : '⇅'}</span><span class="mlabel">${label}</span>`;
+    btn.setAttribute('aria-label', selectMode ? '합치기 취소' : '메모 합치기');
+    $('#composer').classList.toggle('selmode', selectMode && !trashView);
+  }
+
+  function enterSelect() {
+    if (trashView) { showToast('휴지통에서는 합치기를 쓸 수 없어요'); return; }
+    if (editId) cancelEdit();
+    selectMode = true;
+    selected.clear();
+    render();
+    showToast('메모 카드를 눌러 고르세요 · 시간순으로 합쳐요');
+  }
+
+  function exitSelect() {
+    selectMode = false;
+    selected.clear();
+    render();
+  }
+
+  function toggleSelect(id) {
+    if (selected.has(id)) selected.delete(id); else selected.add(id);
+    const el = listEl.querySelector(`.msg[data-id="${id}"]`);
+    if (el) {
+      const on = selected.has(id);
+      el.classList.toggle('selected', on);
+      const box = el.querySelector('.selbox');
+      if (box) box.textContent = on ? '✓' : '';
+    }
+    updateMergeBar();
+  }
+
+  function focusNote(id) {
+    requestAnimationFrame(() => {
+      const el = listEl.querySelector(`.msg[data-id="${id}"]`);
+      if (!el) return;
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      el.classList.add('flash');
+      setTimeout(() => el.classList.remove('flash'), 1900);
+    });
+  }
+
+  function mergeSelected() {
+    if (!selectMode) return;
+    const ids = Array.from(selected);
+    const picks = notes.filter((n) => ids.includes(n.id) && !n.deleted).sort((a, b) => a.t - b.t);
+    if (picks.length < 2) { showToast('두 개 이상 골라 주세요'); return; }
+
+    const delOrig = $('#mergeDelOrig').checked;
+    const text = picks.map((n) => n.text.replace(/\s+$/, '')).filter((t) => t.length).join('\n\n');
+    const imgs = [];
+    picks.forEach((n) => imagesOf(n).forEach((im) => imgs.push({ id: im.id, w: im.w, h: im.h })));
+
+    const merged = {
+      id: uid(),
+      t: Date.now(),
+      text,
+      pinned: picks.some((n) => n.pinned),
+      deleted: false,
+      merged: picks.length,
+    };
+    if (imgs.length) merged.imgs = imgs;
+    const before = picks.map((n) => ({ id: n.id, deleted: !!n.deleted, delAt: n.delAt }));
+
+    notes.push(merged);
+    if (delOrig) picks.forEach((n) => { n.deleted = true; n.delAt = Date.now(); });
+
+    selectMode = false;
+    selected.clear();
+    editId = null;
+    query = '';
+    qEl.value = '';
+    $('#qclear').hidden = true;
+    filter = 'all';
+    activeTag = '';
+    persist();
+    render();
+    focusNote(merged.id);
+
+    showToast(
+      `${picks.length}개 메모를 하나로 합쳤어요${delOrig ? ' · 원본은 휴지통' : ''}`,
+      '실행취소',
+      () => {
+        notes = notes.filter((x) => x.id !== merged.id);
+        before.forEach((b) => {
+          const n = notes.find((x) => x.id === b.id);
+          if (!n) return;
+          n.deleted = b.deleted;
+          if (b.delAt) n.delAt = b.delAt; else delete n.delAt;
+        });
+        persist();
+        render();
+        showToast('합치기를 취소했어요');
+      },
+      9000,
+    );
+  }
+
   function addNote(text, img) {
     const clean = text.replace(/\s+$/, '');
     if (!clean && !img) return;
@@ -601,8 +747,9 @@
     };
     if (img) {
       const id = 'i' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-      n.img = { id, w: img.w, h: img.h };
-      if (fallback) n.img.data = img.data;
+      const rec = { id, w: img.w, h: img.h };
+      if (fallback) rec.data = img.data;
+      n.imgs = [rec];
       Store.putImage(id, img.data);
     }
     notes.push(n);
@@ -664,8 +811,12 @@
   function purgeNote(id) {
     const n = notes.find((x) => x.id === id);
     if (!n) return;
+    const imgs = imageIds(n);
     notes = notes.filter((x) => x.id !== id);
-    if (n.img) Store.delImage(n.img.id);
+    // 합친 메모가 같은 사진을 같이 쓰고 있으면 사진 데이터는 지우지 않는다
+    imgs.forEach((imgId) => {
+      if (!notes.some((o) => imageIds(o).includes(imgId))) Store.delImage(imgId);
+    });
     persist();
     render();
     showToast('완전히 삭제했어요');
@@ -701,9 +852,10 @@
     n.edited = true;
     if (pendingImage) {
       const id = 'i' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-      if (n.img) Store.delImage(n.img.id);
-      n.img = { id, w: pendingImage.w, h: pendingImage.h };
-      if (fallback) n.img.data = pendingImage.data;
+      const rec = { id, w: pendingImage.w, h: pendingImage.h };
+      if (fallback) rec.data = pendingImage.data;
+      n.imgs = imagesOf(n).concat([rec]);
+      delete n.img;
       Store.putImage(id, pendingImage.data);
       pendingImage = null;
       hideAttach();
@@ -827,7 +979,11 @@
           deleted: false,
           edited: !!raw.edited,
         };
-        if (raw.img && raw.img.id) n.img = { id: raw.img.id, w: raw.img.w, h: raw.img.h };
+        if (Array.isArray(raw.imgs) && raw.imgs.length) {
+          n.imgs = raw.imgs.filter((i) => i && i.id).map((i) => ({ id: i.id, w: i.w, h: i.h }));
+          if (raw.merged) n.merged = raw.merged;
+        }
+        if (raw.img && raw.img.id && !n.imgs) n.imgs = [{ id: raw.img.id, w: raw.img.w, h: raw.img.h }];
         if (have.has(n.id)) continue;
         have.add(n.id);
         notes.push(n);
@@ -894,6 +1050,18 @@
     inputEl.focus();
   }
 
+  // 닫힌 입력창에서도 커서 자리에 줄바꿈을 넣는다
+  function insertNewline() {
+    const el = inputEl;
+    const start = el.selectionStart == null ? el.value.length : el.selectionStart;
+    const end = el.selectionEnd == null ? start : el.selectionEnd;
+    el.value = el.value.slice(0, start) + '\n' + el.value.slice(end);
+    const pos = start + 1;
+    el.focus();
+    try { el.setSelectionRange(pos, pos); } catch (e) { /* ignore */ }
+    autosize();
+  }
+
   /* ---------------- 초기화 ---------------- */
   async function init() {
     await Store.init();
@@ -905,7 +1073,16 @@
     // 휴지통 자동 정리
     const cutoff = Date.now() - TRASH_DAYS * 86400000;
     notes = notes.filter((n) => !(n.deleted && n.delAt && n.delAt < cutoff));
+    // 예전 단일 img 형식을 imgs 배열로 맞춰 둔다
+    notes.forEach((n) => {
+      if (!Array.isArray(n.imgs) || !n.imgs.length) {
+        const list = imagesOf(n);
+        if (list.length) n.imgs = list;
+      }
+      if (Array.isArray(n.imgs) && n.imgs.length && n.img) delete n.img;
+    });
     applyTheme();
+    $('#mergeDelOrig').checked = prefs.mergeDelete !== false;
     render();
     requestAnimationFrame(() => {
       listEl.scrollTop = listEl.scrollHeight;
@@ -938,6 +1115,10 @@
   });
 
   $('#btnSend').addEventListener('click', submit);
+  $('#btnNewline').addEventListener('click', insertNewline);
+  $('#btnMerge').addEventListener('click', () => { if (selectMode) exitSelect(); else enterSelect(); });
+  $('#mergeGo').addEventListener('click', mergeSelected);
+  $('#mergeDelOrig').addEventListener('change', (e) => { prefs.mergeDelete = e.target.checked; persist(); });
   $('#btnPhoto').addEventListener('click', () => $('#fileInput').click());
   $('#fileInput').addEventListener('change', async (e) => {
     const f = e.target.files && e.target.files[0];
@@ -1006,6 +1187,7 @@
     if (e.key === 'Escape') {
       if (!$('#lightbox').hidden) { $('#lightbox').hidden = true; return; }
       if (!$('#sheet').hidden) { closeSheet(); return; }
+      if (selectMode) { exitSelect(); return; }
       if (document.activeElement === qEl && qEl.value) { qEl.value = ''; query = ''; $('#qclear').hidden = true; render(); }
       else if (editId) cancelEdit();
     }
