@@ -331,7 +331,7 @@
     return body;
   }
 
-  function thumbEl(im) {
+  function thumbEl(im, noteId) {
     const wrap = document.createElement('div');
     wrap.className = 'thumb';
     const img = document.createElement('img');
@@ -344,7 +344,11 @@
       img.style.background = 'var(--line)';
       Store.getImage(im.id).then((d) => { if (d) img.src = d; });
     }
-    img.addEventListener('click', (e) => { e.stopPropagation(); openLightbox(img.src); });
+    img.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (selectMode) { toggleSelect(noteId); return; }
+      openLightbox(img.src);
+    });
     wrap.appendChild(img);
     return wrap;
   }
@@ -436,7 +440,7 @@
     if (imgs.length) {
       const gal = document.createElement('div');
       gal.className = 'imgrid' + (imgs.length > 1 ? ' multi' : '');
-      imgs.forEach((im) => gal.appendChild(thumbEl(im)));
+      imgs.forEach((im) => gal.appendChild(thumbEl(im, n.id)));
       bubble.appendChild(gal);
     }
     bubbleWrap.appendChild(bubble);
@@ -459,8 +463,13 @@
 
     wrap.append(time, bubbleWrap);
     wrap.addEventListener('click', (e) => {
+      if (selectMode) {
+        // 선택 모드에서는 카드 어디를 눌러도 선택 (사진·할일도 포함)
+        if (e.target.closest('button,a')) return;
+        toggleSelect(n.id);
+        return;
+      }
       if (e.target.closest('a,button,input,label,img')) return;
-      if (selectMode) { toggleSelect(n.id); return; }
       const t = wrap.querySelector('.tools');
       if (t) t.classList.toggle('open');
     });

@@ -294,6 +294,8 @@ html[data-theme="light"] .linkcard { background: #f2f4fb; border-color: #e0e4f2;
 .msg.selmode.selected .selbox { background: var(--accent-solid); border-color: var(--accent-solid); }
 .msg.selmode.selected .bubble { border-color: var(--accent-solid); box-shadow: 0 0 0 2px var(--accent-soft); }
 .msg.selmode .time { opacity: .5; }
+.msg.selmode .todo input { pointer-events: none; }
+.msg.selmode .bubble img { cursor: pointer; }
 
 /* 합친 메모 강조 */
 .msg.flash .bubble { animation: flash 1.8s ease-out; }
