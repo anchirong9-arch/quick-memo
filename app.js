@@ -222,7 +222,7 @@
   function noteTitle(n) {
     const lines = String(n.text || '')
       .split('\n')
-      .map((l) => l.replace(TODO_RE, '$2').replace(BULLET_RE, '').replace(URL_RE, '').trim())
+      .map((l) => l.replace(TODO_RE, '$2').replace(BULLET_RE, '').replace(URL_RE, '').replace(TAG_RE, '').trim())
       .filter(Boolean);
     let t = (lines[0] || '').replace(/\s+/g, ' ').trim();
     if (!t) t = imagesOf(n).length ? '사진 메모' : '메모';
@@ -690,8 +690,11 @@
   }
 
   function bannerStateText() {
-    if (!ddayBannerData()) return '디데이 메모를 넣으면 여기에 떠요';
-    return prefs.ddayBannerOff ? '접힘 — 눌러서 다시 표시' : '가장 가까운 디데이를 상단에 표시';
+    const data = ddayBannerData();
+    if (!data) return '디데이 메모를 넣으면 여기에 떠요';
+    return prefs.ddayBannerOff && prefs.ddayBannerOff === data.sig
+      ? '접힘 — 눌러서 다시 표시'
+      : '가장 가까운 디데이를 상단에 표시';
   }
 
   function render() {
@@ -1339,6 +1342,7 @@
     inputEl.value = '';
     pendingDday = '';
     updateDdayChip();
+    $('#ddayInput').value = '';
     hideAttach();
     autosize();
     inputEl.focus();
@@ -1515,7 +1519,8 @@
     if (act === 'trash') { closeSheet(); trashView = true; editId = null; render(); }
     if (act === 'banner') {
       const data = ddayBannerData();
-      if (prefs.ddayBannerOff) {
+      const folded = !!data && prefs.ddayBannerOff && prefs.ddayBannerOff === data.sig;
+      if (folded) {
         prefs.ddayBannerOff = '';
         showToast('디데이 배너를 켰어요');
       } else if (data) {

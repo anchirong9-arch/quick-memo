@@ -527,3 +527,14 @@ html[hidden], [hidden] { display: none !important; }
   .composer { max-width: 760px; left: 50%; transform: translateX(-50%); border-radius: 0; }
   .bubblewrap { max-width: 74%; }
 }
+
+/* 좁은 폰(390px 안팎)에서 입력창 버튼 5개+전송이 한 줄에 들어가게 */
+@media (max-width: 420px) {
+  .inputrow { gap: 5px; }
+  .cbtn { width: 34px; height: 34px; border-radius: 11px; font-size: 16px; }
+  .cbtn.nl { font-size: 14px; }
+  .send { width: 38px; height: 38px; }
+  #input { padding: 8px 11px; border-radius: 16px; }
+  .ddaybanner { font-size: 12px; }
+  .ddaybanner .db-dday { font-size: 12px; }
+}
