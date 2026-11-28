@@ -122,6 +122,8 @@
   let undoStack = null;
   let selectMode = false;
   const selected = new Set();
+  let pendingDday = '';    // 입력창에서 고른 디데이 날짜 'YYYY-MM-DD'
+  let ddayTargetId = null; // 카드에서 날짜를 바꾸는 대상 메모 id
 
   const listEl = $('#list');
   const inputEl = $('#input');
@@ -158,6 +160,75 @@
     if (diff === 1) return `어제 · ${d.getMonth() + 1}월 ${d.getDate()}일 (${wd})`;
     if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}월 ${d.getDate()}일 (${wd})`;
     return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일 (${wd})`;
+  }
+
+  /* ---------------- 디데이 ---------------- */
+  // 'YYYY-MM-DD' → 연·월·일. 없거나 이상한 값이면 null.
+  function parseDday(s) {
+    if (typeof s !== 'string') return null;
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return null;
+    const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+    const utc = Date.UTC(y, mo - 1, d);
+    const chk = new Date(utc);
+    if (chk.getUTCFullYear() !== y || chk.getUTCMonth() !== mo - 1 || chk.getUTCDate() !== d) return null;
+    return { y, mo, d, utc };
+  }
+  // 오늘 날짜의 자정을 UTC 기준 숫자로 — 양쪽 다 UTC로 재서 시간대·서머타임 때문에 하루 밀리지 않게 한다
+  function todayStamp() {
+    const now = new Date();
+    return Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  }
+  function ddayInfo(s) {
+    const p = parseDday(s);
+    if (!p) return null;
+    const diff = Math.round((p.utc - todayStamp()) / 86400000);
+    return {
+      y: p.y, mo: p.mo, d: p.d,
+      diff,
+      label: diff === 0 ? 'D-DAY' : (diff > 0 ? `D-${diff}` : `D+${-diff}`),
+      short: `${p.mo}/${p.d}`,
+    };
+  }
+  // 다가오는 일정 먼저(D-DAY → D-1 …), 지난 일정은 최근 것부터 뒤로
+  function ddayOrder(a, b) {
+    if (!a) return b ? 1 : 0;
+    if (!b) return -1;
+    if ((a.diff >= 0) !== (b.diff >= 0)) return a.diff >= 0 ? -1 : 1;
+    return a.diff >= 0 ? a.diff - b.diff : b.diff - a.diff;
+  }
+  function ddayLive() {
+    return notes.filter((n) => !n.deleted && ddayInfo(n.dday));
+  }
+  const ddayClass = (info) => {
+    if (!info) return '';
+    if (info.diff === 0) return 'today';
+    if (info.diff > 0) return info.diff <= 3 ? 'soon' : 'future';
+    return 'past';
+  };
+  // 배너에 쓸 가장 가까운 일정 (다가오는 게 없으면 가장 최근 지난 일정)
+  function ddayBannerData() {
+    const live = ddayLive();
+    if (!live.length) return null;
+    const rows = live.map((n) => ({ n, info: ddayInfo(n.dday) })).sort((a, b) => ddayOrder(a.info, b.info));
+    return {
+      note: rows[0].n,
+      info: rows[0].info,
+      extra: live.length - 1,
+      sig: live.map((n) => `${n.id}:${n.dday}`).sort().join('|'),
+    };
+  }
+  // 메모 본문 첫 줄을 배너·제목용 한 줄로
+  function noteTitle(n) {
+    const lines = String(n.text || '')
+      .split('\n')
+      .map((l) => l.replace(TODO_RE, '$2').replace(BULLET_RE, '').replace(URL_RE, '').trim())
+      .filter(Boolean);
+    let t = (lines[0] || '').replace(/\s+/g, ' ').trim();
+    if (!t) t = imagesOf(n).length ? '사진 메모' : '메모';
+    const chars = Array.from(t);
+    if (chars.length > 20) t = chars.slice(0, 20).join('') + '…';
+    return t;
   }
 
   const URL_RE = /https?:\/\/[^\s<>"'`]+|www\.[^\s<>"'`]+/gi;
@@ -237,6 +308,7 @@
     if (trashView) return !!n.deleted;
     if (n.deleted) return false;
     if (filter === 'pin') return !!n.pinned;
+    if (filter === 'dday') return !!ddayInfo(n.dday);
     if (filter === 'link') return urlsOf(n.text).length > 0;
     if (filter === 'img') return imagesOf(n).length > 0;
     if (filter === 'todo') return hasOpenTodo(n.text);
@@ -399,6 +471,27 @@
     return a;
   }
 
+  function ddayBadgeEl(n) {
+    const info = ddayInfo(n.dday);
+    if (!info) return null;
+    const canEdit = !trashView && !selectMode;
+    const b = document.createElement(canEdit ? 'button' : 'span');
+    b.className = 'ddaybadge ' + ddayClass(info);
+    const d = document.createElement('span');
+    d.className = 'db-d';
+    d.textContent = `📅 ${info.label}`;
+    const m = document.createElement('span');
+    m.className = 'db-m';
+    m.textContent = info.short;
+    b.append(d, m);
+    if (canEdit) {
+      b.type = 'button';
+      b.title = '디데이 날짜 바꾸기';
+      b.addEventListener('click', (e) => { e.stopPropagation(); openDdayPicker(n.id); });
+    }
+    return b;
+  }
+
   function toolsEl(n) {
     const tools = document.createElement('div');
     tools.className = 'tools';
@@ -420,12 +513,16 @@
     }
     const acts = document.createElement('div');
     acts.className = 'acts';
-    acts.append(
+    const dd = ddayInfo(n.dday);
+    const items = [
       mk(n.pinned ? '고정해제' : '📌 고정', () => togglePin(n.id)),
+      mk(dd ? `📅 ${dd.label}` : '📅 디데이', () => openDdayPicker(n.id), null, dd ? '디데이 날짜 바꾸기' : '디데이 날짜 정하기'),
+      dd ? mk('📅 빼기', () => clearDday(n.id), null, '디데이 빼기') : null,
       mk('☑️ 할일', () => convertNoteToTodo(n.id), null, '줄마다 체크박스로 바꾸기'),
       mk('수정', () => startEdit(n.id)),
       mk('삭제', () => deleteNote(n.id), 'danger'),
-    );
+    ].filter(Boolean);
+    acts.append(...items);
     tools.append(
       mk('복사', () => copyText(n.text), null, '한 번에 복사'),
       mk('⋯', () => tools.classList.toggle('open'), 'more', '고정·수정·삭제'),
@@ -456,6 +553,8 @@
 
     const bubble = document.createElement('div');
     bubble.className = 'bubble' + (n.pinned && !trashView ? ' pinned' : '');
+    const badge = ddayBadgeEl(n);
+    if (badge) bubble.appendChild(badge);
     bubble.appendChild(bodyEl(n, ts));
     const urls = urlsOf(n.text);
     if (urls.length) bubble.appendChild(linkCardEl(urls[0]));
@@ -503,6 +602,7 @@
     const live = notes.filter((n) => !n.deleted);
     return [
       { id: 'all', label: '전체', n: live.length },
+      { id: 'dday', label: '📅 디데이', n: live.filter((x) => ddayInfo(x.dday)).length },
       { id: 'pin', label: '📌 고정', n: live.filter((x) => x.pinned).length },
       { id: 'link', label: '🔗 링크', n: live.filter((x) => urlsOf(x.text).length).length },
       { id: 'img', label: '🖼️ 사진', n: live.filter((x) => imagesOf(x).length).length },
@@ -531,7 +631,7 @@
       b.setAttribute('role', 'tab');
       b.setAttribute('aria-selected', filter === d.id ? 'true' : 'false');
       b.innerHTML = `${d.label} <span class="n">${d.n}</span>`;
-      b.addEventListener('click', () => { filter = d.id; render(); });
+      b.addEventListener('click', () => { filter = d.id; render(); listEl.scrollTop = 0; });
       chipsEl.appendChild(b);
     });
     if (activeTag) {
@@ -550,6 +650,50 @@
     }
   }
 
+  function renderBanner() {
+    const el = $('#ddayBanner');
+    const data = trashView ? null : ddayBannerData();
+    if (!data || (prefs.ddayBannerOff && prefs.ddayBannerOff === data.sig)) { el.hidden = true; return; }
+    el.className = 'ddaybanner ' + ddayClass(data.info);
+    el.dataset.noteId = data.note.id;
+    el.textContent = '';
+    const d = document.createElement('b');
+    d.className = 'db-dday';
+    d.textContent = `📅 ${data.info.label}`;
+    const t = document.createElement('span');
+    t.className = 'db-title';
+    t.textContent = noteTitle(data.note);
+    const dt = document.createElement('span');
+    dt.className = 'db-date';
+    dt.textContent = data.info.short;
+    el.append(d, t, dt);
+    if (data.extra > 0) {
+      const m = document.createElement('span');
+      m.className = 'db-more';
+      m.textContent = '+' + data.extra;
+      el.append(m);
+    }
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'dbx';
+    x.textContent = '✕';
+    x.setAttribute('aria-label', '디데이 배너 접기');
+    x.addEventListener('click', (e) => {
+      e.stopPropagation();
+      prefs.ddayBannerOff = data.sig;
+      persist();
+      renderBanner();
+      showToast('배너를 접었어요 · 디데이를 새로 넣으면 다시 떠요');
+    });
+    el.append(x);
+    el.hidden = false;
+  }
+
+  function bannerStateText() {
+    if (!ddayBannerData()) return '디데이 메모를 넣으면 여기에 떠요';
+    return prefs.ddayBannerOff ? '접힘 — 눌러서 다시 표시' : '가장 가까운 디데이를 상단에 표시';
+  }
+
   function render() {
     if (trashView && selectMode) { selectMode = false; selected.clear(); }
     const ts = terms();
@@ -559,6 +703,7 @@
 
     listEl.innerHTML = '';
     renderChips();
+    renderBanner();
     $('#totalBadge').textContent = notes.filter((n) => !n.deleted).length;
     $('#btnMerge').hidden = trashView;
     composerVisible(!trashView);
@@ -579,6 +724,10 @@
           '<span>링크는 자동으로 카드가 되고, 🖼️ 로 사진 첨부</span></div>';
       } else if (trashView) {
         empty.innerHTML = '<div class="big">🗑️</div><b>휴지통이 비어 있어요</b>';
+      } else if (filter === 'dday' && !query.trim() && !activeTag) {
+        empty.innerHTML =
+          '<div class="big">📅</div><b>디데이 메모가 없어요</b>' +
+          '<small>입력창의 📅 를 눌러 날짜를 붙이면, 여기에 다가오는 순서로 모여요.</small>';
       } else {
         empty.innerHTML =
           '<div class="big">🔍</div><b>검색 결과가 없어요</b>' +
@@ -599,6 +748,26 @@
       shown.sort((a, b) => (b.delAt || 0) - (a.delAt || 0));
       shown.forEach((n) => listEl.appendChild(msgEl(n, ts)));
       updateQcount(shown.length, shown.length);
+      return;
+    }
+
+    if (filter === 'dday' && !activeTag) {
+      // 다가오는 순서로 한 줄로 — 다가오는 일정과 지난 일정을 머리말로 나눈다
+      const rows = shown.map((n) => ({ n, info: ddayInfo(n.dday) })).sort((a, b) => ddayOrder(a.info, b.info));
+      let grp = null;
+      rows.forEach((row) => {
+        const g = row.info && row.info.diff >= 0 ? 'up' : 'past';
+        if (g !== grp) {
+          grp = g;
+          const head = document.createElement('div');
+          head.className = 'sectionhead';
+          head.textContent = g === 'up' ? '📅 다가오는' : '📅 지난 일정';
+          listEl.appendChild(head);
+        }
+        listEl.appendChild(msgEl(row.n, ts));
+      });
+      updateQcount(shown.length, notes.filter((n) => !n.deleted).length);
+      requestAnimationFrame(() => { scroller.scrollTop = keepTop; });
       return;
     }
 
@@ -736,6 +905,12 @@
       merged: picks.length,
     };
     if (imgs.length) merged.imgs = imgs;
+    // 고른 메모에 디데이가 있으면 가장 가까운 것을 새 메모에 따라가게 한다
+    const picksDday = picks
+      .map((n) => ({ n, info: ddayInfo(n.dday) }))
+      .filter((x) => x.info)
+      .sort((a, b) => ddayOrder(a.info, b.info));
+    if (picksDday.length) merged.dday = picksDday[0].n.dday;
     const before = picks.map((n) => ({ id: n.id, deleted: !!n.deleted, delAt: n.delAt }));
 
     notes.push(merged);
@@ -772,7 +947,7 @@
     );
   }
 
-  function addNote(text, img) {
+  function addNote(text, img, dday) {
     const clean = text.replace(/\s+$/, '');
     if (!clean && !img) return;
     const n = {
@@ -782,6 +957,7 @@
       pinned: false,
       deleted: false,
     };
+    if (dday && parseDday(dday)) n.dday = dday;
     if (img) {
       const id = 'i' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
       const rec = { id, w: img.w, h: img.h };
@@ -886,6 +1062,8 @@
     editId = id;
     inputEl.value = n.text;
     pendingImage = null;
+    pendingDday = parseDday(n.dday) ? n.dday : '';
+    updateDdayChip();
     hideAttach();
     $('#editbar').hidden = false;
     autosize();
@@ -897,6 +1075,9 @@
   function cancelEdit() {
     editId = null;
     inputEl.value = '';
+    pendingDday = '';
+    updateDdayChip();
+    $('#ddayInput').value = '';
     $('#editbar').hidden = true;
     autosize();
   }
@@ -908,6 +1089,8 @@
     if (!text) return;
     n.text = text;
     n.edited = true;
+    if (pendingDday && parseDday(pendingDday)) n.dday = pendingDday;
+    else delete n.dday;
     if (pendingImage) {
       const id = 'i' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
       const rec = { id, w: pendingImage.w, h: pendingImage.h };
@@ -922,6 +1105,54 @@
     cancelEdit();
     render();
     showToast('수정했어요');
+  }
+
+  /* ---------------- 디데이 입력 (입력창·카드) ---------------- */
+  function updateDdayChip() {
+    const box = $('#ddayChip');
+    if (!pendingDday) { box.hidden = true; return; }
+    const info = ddayInfo(pendingDday);
+    $('#ddayChipText').textContent = `📅 ${pendingDday}${info ? `  (${info.label})` : ''}`;
+    box.className = 'ddaychip ' + ddayClass(info);
+    box.hidden = false;
+  }
+
+  // noteId 없이 부르면 지금 입력창에 붙일 날짜를 고른다
+  function openDdayPicker(noteId) {
+    const el = $('#ddayInput');
+    ddayTargetId = noteId || null;
+    const n = noteId ? notes.find((x) => x.id === noteId) : null;
+    el.value = n ? (parseDday(n.dday) ? n.dday : '') : pendingDday;
+    try {
+      if (typeof el.showPicker === 'function') { el.showPicker(); return; }
+    } catch (e) { /* 아래 방식으로 */ }
+    try { el.focus(); el.click(); } catch (e) { /* ignore */ }
+  }
+
+  function clearDday(id) {
+    const n = notes.find((x) => x.id === id);
+    if (!n) return;
+    delete n.dday;
+    n.edited = true;
+    persist();
+    render();
+    showToast('디데이를 뺐어요');
+  }
+
+  function jumpToNote(id) {
+    let el = listEl.querySelector(`.msg[data-id="${id}"]`);
+    if (!el) {
+      if (editId) cancelEdit();
+      if (selectMode) { selectMode = false; selected.clear(); }
+      trashView = false;
+      query = '';
+      qEl.value = '';
+      $('#qclear').hidden = true;
+      activeTag = '';
+      filter = 'dday';
+      render();
+    }
+    focusNote(id);
   }
 
   async function copyText(text) {
@@ -1042,6 +1273,8 @@
           if (raw.merged) n.merged = raw.merged;
         }
         if (raw.img && raw.img.id && !n.imgs) n.imgs = [{ id: raw.img.id, w: raw.img.w, h: raw.img.h }];
+        if (raw.dday && parseDday(raw.dday)) n.dday = raw.dday;
+        if (raw.merged) n.merged = raw.merged;
         if (have.has(n.id)) continue;
         have.add(n.id);
         notes.push(n);
@@ -1065,6 +1298,7 @@
     $('#sheetback').hidden = false;
     $('#sheet').hidden = false;
     $('#trashCount').textContent = `삭제한 메모 ${notes.filter((n) => n.deleted).length}개 · 30일 뒤 자동 정리`;
+    $('#bannerState').textContent = bannerStateText();
     $('#sheetInfo').textContent =
       `메모 ${notes.filter((n) => !n.deleted).length}개 · 저장 위치: 이 브라우저(${fallback ? 'LocalStorage' : 'IndexedDB'}) 안 · 서버 전송 없음`;
   }
@@ -1101,8 +1335,10 @@
     const text = inputEl.value;
     if (!text.trim() && !pendingImage) return;
     const img = pendingImage;
-    addNote(text, img);
+    addNote(text, img, pendingDday);
     inputEl.value = '';
+    pendingDday = '';
+    updateDdayChip();
     hideAttach();
     autosize();
     inputEl.focus();
@@ -1126,7 +1362,7 @@
     const saved = await Store.load();
     if (saved) {
       notes = Array.isArray(saved.notes) ? saved.notes : [];
-      prefs = Object.assign({ theme: 'dark' }, saved.prefs || {});
+      prefs = Object.assign({ theme: 'dark', ddayBannerOff: '' }, saved.prefs || {});
     }
     // 휴지통 자동 정리
     const cutoff = Date.now() - TRASH_DAYS * 86400000;
@@ -1211,6 +1447,53 @@
   });
   $('#editCancel').addEventListener('click', cancelEdit);
 
+  // 📅 — 입력창에 붙일 디데이 날짜 고르기
+  $('#btnDday').addEventListener('click', () => openDdayPicker(null));
+  $('#ddayChipClear').addEventListener('click', () => {
+    pendingDday = '';
+    $('#ddayInput').value = '';
+    updateDdayChip();
+    inputEl.focus();
+  });
+  $('#ddayInput').addEventListener('change', (e) => {
+    const v = e.target.value || '';
+    const valid = v && parseDday(v) ? v : '';
+    const target = ddayTargetId;
+    ddayTargetId = null;
+    if (target) {
+      const n = notes.find((x) => x.id === target);
+      if (!n) return;
+      if (!valid) { clearDday(target); return; }
+      n.dday = valid;
+      n.edited = true;
+      persist();
+      render();
+      const info = ddayInfo(valid);
+      showToast(`📅 ${info.label} · ${valid} 로 정했어요`);
+      return;
+    }
+    pendingDday = valid;
+    updateDdayChip();
+    if (valid) {
+      const info = ddayInfo(valid);
+      showToast(`📅 ${info.label} (${valid}) — Enter로 메모와 함께 저장`);
+    }
+    inputEl.focus();
+  });
+
+  // 상단 디데이 배너 — 누르면 그 메모로
+  const bannerEl = $('#ddayBanner');
+  bannerEl.addEventListener('click', () => {
+    const id = bannerEl.dataset.noteId;
+    if (id) jumpToNote(id);
+  });
+  bannerEl.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    const id = bannerEl.dataset.noteId;
+    if (id) jumpToNote(id);
+  });
+
   qEl.addEventListener('input', () => {
     query = qEl.value;
     $('#qclear').hidden = !query;
@@ -1230,6 +1513,21 @@
     if (act === 'export') { closeSheet(); exportJson(); }
     if (act === 'import') { closeSheet(); $('#importInput').click(); }
     if (act === 'trash') { closeSheet(); trashView = true; editId = null; render(); }
+    if (act === 'banner') {
+      const data = ddayBannerData();
+      if (prefs.ddayBannerOff) {
+        prefs.ddayBannerOff = '';
+        showToast('디데이 배너를 켰어요');
+      } else if (data) {
+        prefs.ddayBannerOff = data.sig;
+        showToast('디데이 배너를 접었어요 · 디데이를 새로 넣으면 다시 떠요');
+      } else {
+        showToast('디데이 메모를 넣으면 배너가 떠요');
+      }
+      persist();
+      render();
+      $('#bannerState').textContent = bannerStateText();
+    }
     if (act === 'theme') { toggleTheme(); }
   }));
   $('#importInput').addEventListener('change', (e) => {
